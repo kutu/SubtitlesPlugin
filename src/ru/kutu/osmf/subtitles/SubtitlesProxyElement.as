@@ -1,0 +1,103 @@
+package ru.kutu.osmf.subtitles {
+	
+	import by.blooddy.crypto.serialization.JSON;
+	
+	import org.osmf.elements.ProxyElement;
+	import org.osmf.events.LoadEvent;
+	import org.osmf.events.MediaElementEvent;
+	import org.osmf.media.MediaElement;
+	import org.osmf.traits.LoadState;
+	import org.osmf.traits.LoadTrait;
+	import org.osmf.traits.MediaTraitType;
+	
+	CONFIG::LOGGING {
+		import org.osmf.logging.Log;
+		import org.osmf.logging.Logger;
+	}
+	
+	public class SubtitlesProxyElement extends ProxyElement {
+		
+		CONFIG::LOGGING {
+			private static const logger:Logger = Log.getLogger("ru.kutu.osmf.subtitles.SubtitlesProxyElement");
+		}
+		
+		private var mediaLoadTrait:LoadTrait;
+		private var subtitlesTrait:SubtitlesTrait;
+		
+		public function SubtitlesProxyElement(proxiedElement:MediaElement=null) {
+			super(proxiedElement);
+		}
+		
+		override public function set proxiedElement(value:MediaElement):void {
+			super.proxiedElement = value;
+			
+			if (value == null) return;
+			
+			var media:MediaElement = super.proxiedElement;
+			
+			if (media && resource) {
+				var subtitlesSource:String = resource.getMetadataValue(SubtitlesPluginInfo.NAMESPACE) as String;
+				var subtitles:Object;
+				if (subtitlesSource && subtitlesSource.length) {
+					CONFIG::LOGGING {
+						logger.info("Start decoding subtitles settings");
+					}
+					try {
+						subtitles = JSON.decode(subtitlesSource);
+						CONFIG::LOGGING {
+							logger.info("Finish decoding subtitles settings");
+						}
+					} catch(error:Error) {
+						CONFIG::LOGGING {
+							logger.error("Error occured while decoding json subtitles settings {0}: {1}", error.errorID, error.message);
+						}
+					}
+				}
+				if (subtitles && "subtitles" in subtitles) {
+					var sources:Vector.<SubtitlesSourceItem> = new Vector.<SubtitlesSourceItem>();
+					for each (var item:Object in subtitles.subtitles) {
+						sources.push(new SubtitlesSourceItem(item.src, item.label, item.language));
+					}
+					if (sources.length) {
+						subtitlesTrait = new SubtitlesTrait(sources, media);
+						mediaLoadTrait = media.getTrait(MediaTraitType.LOAD) as LoadTrait;
+						if (mediaLoadTrait) {
+							mediaLoadTrait.addEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+						}
+						media.addEventListener(MediaElementEvent.TRAIT_ADD, onTraitAdd);
+						media.addEventListener(MediaElementEvent.TRAIT_REMOVE, onTraitRemove);
+						checkReady();
+					}
+				}
+			}
+		}
+		
+		private function onMediaLoadStateChange(event:LoadEvent):void {
+			checkReady();
+		}
+		
+		private function onTraitAdd(event:MediaElementEvent):void {
+			if (event.traitType == MediaTraitType.LOAD) {
+				mediaLoadTrait = proxiedElement.getTrait(MediaTraitType.LOAD) as LoadTrait;
+				mediaLoadTrait.addEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+				checkReady();
+			}
+		}
+		
+		private function onTraitRemove(event:MediaElementEvent):void {
+			if (mediaLoadTrait && event.traitType == MediaTraitType.LOAD) {
+				mediaLoadTrait.removeEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+				mediaLoadTrait = null;
+			}
+		}
+		
+		private function checkReady():void {
+			if (!mediaLoadTrait || mediaLoadTrait.loadState != LoadState.READY) return;
+			addTrait(SubtitlesTrait.SUBTITLES, subtitlesTrait);
+			mediaLoadTrait.removeEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+			mediaLoadTrait = null;
+		}
+		
+	}
+	
+}
