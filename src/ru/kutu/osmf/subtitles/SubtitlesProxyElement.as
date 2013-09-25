@@ -63,8 +63,9 @@ package ru.kutu.osmf.subtitles {
 						mediaLoadTrait = media.getTrait(MediaTraitType.LOAD) as LoadTrait;
 						if (mediaLoadTrait) {
 							mediaLoadTrait.addEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+						} else {
+							media.addEventListener(MediaElementEvent.TRAIT_ADD, onTraitAdd);
 						}
-						media.addEventListener(MediaElementEvent.TRAIT_ADD, onTraitAdd);
 						media.addEventListener(MediaElementEvent.TRAIT_REMOVE, onTraitRemove);
 						checkReady();
 					}
@@ -77,8 +78,8 @@ package ru.kutu.osmf.subtitles {
 		}
 		
 		private function onTraitAdd(event:MediaElementEvent):void {
-			if (event.traitType == MediaTraitType.LOAD) {
-				mediaLoadTrait = proxiedElement.getTrait(MediaTraitType.LOAD) as LoadTrait;
+			if (!mediaLoadTrait && event.traitType == MediaTraitType.LOAD) {
+				mediaLoadTrait = super.proxiedElement.getTrait(MediaTraitType.LOAD) as LoadTrait;
 				mediaLoadTrait.addEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
 				checkReady();
 			}
@@ -86,14 +87,19 @@ package ru.kutu.osmf.subtitles {
 		
 		private function onTraitRemove(event:MediaElementEvent):void {
 			if (mediaLoadTrait && event.traitType == MediaTraitType.LOAD) {
-				mediaLoadTrait.removeEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
-				mediaLoadTrait = null;
+				checkReady();
+				if (mediaLoadTrait) {
+					mediaLoadTrait.removeEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
+					mediaLoadTrait = null;
+				}
 			}
 		}
 		
 		private function checkReady():void {
 			if (!mediaLoadTrait || mediaLoadTrait.loadState != LoadState.READY) return;
 			addTrait(SubtitlesTrait.SUBTITLES, subtitlesTrait);
+			super.proxiedElement.removeEventListener(MediaElementEvent.TRAIT_ADD, onTraitAdd);
+			super.proxiedElement.removeEventListener(MediaElementEvent.TRAIT_REMOVE, onTraitRemove);
 			mediaLoadTrait.removeEventListener(LoadEvent.LOAD_STATE_CHANGE, onMediaLoadStateChange);
 			mediaLoadTrait = null;
 		}
